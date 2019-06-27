@@ -434,6 +434,16 @@ var uploadGraphPage = {
 };
 
 var compareGraphPage = {
+    cyGraph: undefined,
+    cyGraph2: undefined,
+    graph_1_id: undefined,
+    graph_2_id: undefined,
+    graph_json_1: undefined,
+    style_json_1: undefined,
+    graph_json_2: undefined,
+    style_json_2: undefined,
+    common_nodes: undefined,
+    timeout: null,
     init: function () {
         /**
          * This function is called to setup the upload graph page.
@@ -447,22 +457,67 @@ var compareGraphPage = {
         $('#edges-li').hide();
         $('#visualization-li').hide();
         compareGraphPage.loadGraphs();
+        $('#graphVisualizationTabBtn').click(function (e) {
+            window.setTimeout(function () {
+                $('#cyGraphContainer').css('height', '99%');
+            }, 100);
+            compareGraphPage.cyGraph.fit().center();
+        });
+        $("#myInput").on("keyup", function() {
+            var value = $(this).val().toLowerCase();
+            $(".dropdown-menu li").filter(function() {
+              $(this).toggle($(this).text().toLowerCase().indexOf(value) > -1)
+            });
+          });
+        $("#dropdownMenu1").on("focusin", function() {
+            var value = "";
+            $("#myInput").val("");
+            $(".dropdown-menu li").filter(function() {
+              $(this).toggle($(this).text().toLowerCase().indexOf(value) > -1)
+            });
+          });
+        $("#dropdownMenu2").on("focusin", function() {
+            var value = "";
+            $("#myInput").val("");
+            $(".dropdown-menu li").filter(function() {
+              $(this).toggle($(this).text().toLowerCase().indexOf(value) > -1)
+            });
+          });
+        $('#colorpicker1').colorpicker();
+        $('#colorpicker1').colorpicker().on('changeColor', function (event) {
+            $('#colorpicker1').css('background-color', event.color.toString());
+            $('#colorpicker1').val(event.color.toString());
+            if (compareGraphPage.cyGraph){
+                compareGraphPage.setNodesColor('graph_1', event.color.toString());
+                compareGraphPage.setNodesColor('common_1', $('#operatorcolorpicker').val());
+                compareGraphPage.setNodesColor('common_2', $('#operatorcolorpicker').val());
+            }
+            //compareGraphPage.cyGraph.nodes().style({'background-color': event.color.toString()});
+        });
+        $('#colorpicker2').colorpicker();
+        $('#colorpicker2').colorpicker().on('changeColor', function (event) {
+            $('#colorpicker2').css('background-color', event.color.toString());
+            $('#colorpicker2').val(event.color.toString());
+            if (compareGraphPage.cyGraph){
+                compareGraphPage.setNodesColor('graph_2', event.color.toString());
+                compareGraphPage.setNodesColor('common_1', $('#operatorcolorpicker').val());
+                compareGraphPage.setNodesColor('common_2', $('#operatorcolorpicker').val());
+            }
+            // compareGraphPage.setCommonNodesColor(event.color.toString());
+        });
+        $('#operatorcolorpicker').colorpicker();
+        $('#operatorcolorpicker').colorpicker().on('changeColor', function (event) {
+            $('#operatorcolorpicker').css('background-color', event.color.toString());
+            $('#operatorcolorpicker').val(event.color.toString());
+            compareGraphPage.setNodesColor('common_1', event.color.toString());
+            compareGraphPage.setNodesColor('common_2', event.color.toString());
+        });
+        // compareGraphPage.cyGraph = compareGraphPage.contructCytoscapeGraph();
     },
     loadGraphs: function () {
         var params = {'data': {'sort': 'updated_at', 'order': 'desc', 'offset': 0, 'limit': 10}};
         query = '';
         params.data["owner_email"] = $('#UserEmail').val();
-
-        apis.graphs.getByID(1,  query,
-            successCallback = function (response) {
-                // This method is called when graphs are successfully fetched.
-                compareGraphPage.populateCompareDropdownMenu(response['graphs']);
-            },
-            errorCallback = function () {
-                // This method is called when error occurs while fetching graphs.
-                params.error('Error');
-            }
-        );
 
         apis.graphs.search(params.data, query,
             successCallback = function (response) {
@@ -503,9 +558,16 @@ var compareGraphPage = {
         );
     },
     setDropdownMenu: function (obj) {
-        obj.parent().parent().siblings('button').text(obj.attr('data'));
-        obj.parent().parent().siblings('button').append('<span class="caret"></span>');
-        obj.parent().parent().siblings('button').attr("value", obj.attr('row_id'));
+        var label = obj.parent().parent().siblings('button').children('i');
+        if(label.text()){
+            label.text(label.attr('value'));
+        obj.parent().parent().siblings('button').children('bold').text(obj.attr('data'));
+        }
+        else{
+            obj.parent().parent().siblings("button[class*='dropdown-toggle']").text( obj.attr('data'));
+            obj.parent().parent().siblings("button[class*='dropdown-toggle']").append('<span class="caret"></span>');
+        }
+        obj.parent().parent().siblings("button[class*='dropdown-toggle']").attr("value", obj.attr('row_id'));
     },
     populateCompareDropdownMenu: function (data) {
         $.each(data, function (i, item) {
@@ -528,26 +590,148 @@ var compareGraphPage = {
 
 
     },
+    setNodesColor: function(graph_parent, color){
+        compareGraphPage.cyGraph.filter(":parent[id='"+ graph_parent+"']").style({'background-color':color, 'background-opacity':0.3});
+        compareGraphPage.cyGraph.filter("node[parent='"+ graph_parent+"']").style({'background-color':color});
+    },
+    setGraph0Groups: function(graph_json, common_nodes) {
+        const len = graph_json['elements']['nodes'].length;
+        var common_id = undefined;
+        graph_json['elements']['nodes'][len] = {'data':{'id':'graph_1', 'label':'Primary Graph', 'name':'Primary Graph'}};
+        graph_json['elements']['nodes'][len+1] = {'data':{'id':'common_1', 'label':'Common', 'name':'Common'}};
+        _.each(graph_json['elements']['nodes'], function(item){
+            if (item['data']['id'] != graph_json['elements']['nodes'][len]['data']['id'])
+                item['data']['parent'] = graph_json['elements']['nodes'][len]['data']['id'];
+            _.each(common_nodes, function (innerNode) {
+                if(innerNode.length)
+                    innerNode = (innerNode[0]['graph_id'] == compareGraphPage.graph_1_id)? innerNode[0] : innerNode[1];
+               if(item['data']['label'] == innerNode['label']){
+                   if(!common_id) {
+                       common_id = item['data']['id'];
+                       compareGraphPage.common_nodes['parent1'] = common_id;
+                   }
+                   item['data']['parent'] = 'common_1';
+                   // item['data']['parent'] = common_id;
+               }
+                   // item['data']['parent'] = item['data']['id'];
+                   // item['data']['parent'] = graph_json['elements']['nodes'][len+1]['data']['id'];
+            });
+        });
+        // compareGraphPage.graph_json_1['elements']['nodes'][0]['data']['parent'] = undefined;
+    },
+    setGraph1Groups: function(graph_json, common_nodes) {
+        const len = graph_json['elements']['nodes'].length;
+        var common_id = undefined;
+        graph_json['elements']['nodes'][len] = {'data':{'id':'graph_2', 'label':'Secondary Graph', 'name':'Secondary Graph'}};
+        graph_json['elements']['nodes'][len+1] = {'data':{'id':'common_2', 'label':'Common', 'name':'Common'}};
+        _.each(graph_json['elements']['nodes'], function(item){
+            if (item['data']['id'] != graph_json['elements']['nodes'][len]['data']['id'])
+                item['data']['parent'] = graph_json['elements']['nodes'][len]['data']['id'];
+            _.each(common_nodes, function (innerNode) {
+                if(innerNode.length)
+                    innerNode = (innerNode[0]['graph_id'] == compareGraphPage.graph_2_id)? innerNode[0] : innerNode[1];
+               if(item['data']['label'] == innerNode['label']){
+                   if(!common_id) {
+                       common_id = item['data']['id'];
+                       compareGraphPage.common_nodes['parent2'] = common_id;
+                   }
+                   item['data']['parent'] = 'common_2';
+               }
+                   // item['data']['parent'] = graph_json['elements']['nodes'][len+1]['data']['id'];
+            });
+        });
+        graph_json['elements']['nodes'][len+1]['data']['parent'] = 'graph_2';
+    },
     compareGraphs: function () {
-        graph_1_id = $('#dropdownMenu1').attr('value');
-        graph_2_id = $('#dropdownMenu2').attr('value');
+        compareGraphPage.graph_1_id = $('#dropdownMenu1').attr('value');
+        compareGraphPage.graph_2_id = $('#dropdownMenu2').attr('value');
         operation = $('#operatorMenu1').attr('value');
-        if (operation && graph_1_id && graph_2_id){
-            apis.compare.get({'graph_1_id': graph_1_id, 'graph_2_id': graph_2_id, 'operation': operation},
+        apis.graphs.getByID(compareGraphPage.graph_1_id,
+            successCallback = function (response) {
+                // This method is called when graphs are successfully fetched.
+                // compareGraphPage.cyGraph = compareGraphPage.contructCytoscapeGraph(response['graph_json'], response['style_json']);
+                // compareGraphPage.cyGraph.panzoom();
+                // compareGraphPage.cyGraph.nodes().style({'background-color': $('#colorpicker2').val()});
+                compareGraphPage.graph_json_1 = response['graph_json'];
+                compareGraphPage.style_json_1 = response['style_json'];
+                // compareGraphPage.setGraphGroups();
+                apis.graphs.getByID(compareGraphPage.graph_2_id,
+                    successCallback = function (response) {
+                        // This method is called when graphs are successfully fetched.
+                        // var graph_json = response['graph_json'];
+                        // graph_json.push.apply(graph_json, graph_json_1)
+                        // compareGraphPage.cyGraph2 = compareGraphPage.contructCytoscapeGraph(graph_json, response['style_json']);
+                        // compareGraphPage.cyGraph2.panzoom();
+                        // compareGraphPage.cyGraph2.nodes().style({'background-color': $('#colorpicker2').val()});
+                        compareGraphPage.graph_json_2 = response['graph_json'];
+                        compareGraphPage.style_json_2 = response['style_json'];
+                        compareGraphPage.compareGraphHelper();
+                    },
+                    errorCallback = function () {
+                        // This method is called when error occurs while fetching graphs.
+                        params.error('Error');
+                    }
+                );
+
+            },
+            errorCallback = function () {
+                // This method is called when error occurs while fetching graphs.
+                params.error('Error');
+            }
+        );
+    },
+    compareGraphHelper: function(){
+        operation = $('#operatorMenu1').attr('value');
+        if (operation && compareGraphPage.graph_1_id && compareGraphPage.graph_2_id){
+             $('#nodes-table > thead').find("th").remove();
+              $('#edges-table > thead').find("th").remove();
+            $('#nodes-table > thead > tr').append('<th><h4 style="text-align:center">Primary Graph</h4></th>');
+            $('#nodes-table > thead > tr').append('<th><h4 style="text-align:center">Secondary Graph</h4></th>');
+
+            $('#edges-table > thead > tr').append('<th><h4 style="text-align:center">Primary Graph</h4></th>');
+            $('#edges-table > thead > tr').append('<th><h4 style="text-align:center">Secondary Graph</h4></th>');
+
+            apis.compare.get({'graph_1_id': compareGraphPage.graph_1_id, 'graph_2_id': compareGraphPage.graph_2_id, 'operation': operation},
             successCallback = function (response) {
                 // $('#nodes-table').DataTable();
+                compareGraphPage.common_nodes = response['nodes'];
                 compareGraphPage.populateNodeData(response['nodes']);
                 compareGraphPage.populateEdgeData(response['edges']);
                 $('#nodes-total-badge').text(response['nodes'].length);
                 $('#edges-total-badge').text(response['edges'].length);
 
-                $('#nodes-table').DataTable({"destroy": true}).draw();
-                $('#edges-table').DataTable({"destroy": true}).draw();
+                compareGraphPage.setGraph0Groups(compareGraphPage.graph_json_1, response['nodes']);
+                compareGraphPage.setGraph1Groups(compareGraphPage.graph_json_2, response['nodes']);
+                compareGraphPage.graph_json_1['elements']['nodes'] = compareGraphPage.graph_json_1['elements']['nodes'].concat(compareGraphPage.graph_json_2['elements']['nodes']);
+                compareGraphPage.graph_json_1['elements']['edges'] = compareGraphPage.graph_json_1['elements']['edges'].concat(compareGraphPage.graph_json_2['elements']['edges']);
+                compareGraphPage.style_json_1['style'] = compareGraphPage.style_json_1['style'].concat(compareGraphPage.style_json_2['style']);
+
+                // compareGraphPage.setNodesColor
+                compareGraphPage.cyGraph = compareGraphPage.contructCytoscapeGraph(compareGraphPage.graph_json_1, compareGraphPage.style_json_1);
+                compareGraphPage.cyGraph.panzoom();
+                // compareGraphPage.cyGraph.nodes().style({'background-color': $('#colorpicker1').val()});
+                compareGraphPage.setNodesColor('graph_1', $('#colorpicker1').val());
+                compareGraphPage.setNodesColor('graph_2', $('#colorpicker2').val());
+
+                // compareGraphPage.setNodesColor(compareGraphPage.common_nodes['parent1'], $('#operatorcolorpicker').val());
+                // compareGraphPage.setNodesColor(compareGraphPage.common_nodes['parent2'], $('#operatorcolorpicker').val());
+
+                compareGraphPage.setNodesColor('common_1', $('#operatorcolorpicker').val());
+                compareGraphPage.setNodesColor('common_2', $('#operatorcolorpicker').val());
+
+                compareGraphPage.cyGraph.layout({
+                    'name': 'cose-bilkent',
+                    'animate': false,
+                }).run();
+                $('#nodes-table').DataTable().draw();
+                $('#edges-table').DataTable().draw();
                 $('.dataTables_length').addClass('bs-select');
 
                 $('#nodes-li').show();
                 $('#visualization-li').show();
                 $('#edges-li').show();
+                $('#visualization-li a:last').tab('show');
+                $('#visualization-li a:first').tab('show');
             },
             errorCallback = function (xhr, status, errorThrown) {
                 // This method is called when  error occurs while deleting group_to_graph relationship.
@@ -557,17 +741,25 @@ var compareGraphPage = {
         else{
             $.notify({message: "Please select correct parameters for Graph comparison."}, {type: 'danger'});
         }
-
     },
     resetData: function() {
         location.replace("/compare");
 
     },
     populateNodeData: function (nodes) {
-        // $('#nodes-table').DataTable().clear();
         var trHTML = '';
+        $('#nodes-table').DataTable().clear().destroy();
         $('#nodes-comparison-table').find("tr:gt(0)").remove();
+        if(!nodes[0].length){
+            $('#nodes-table > thead').find("th:gt(0)").remove();
+            $('#nodes-table').parent().attr('align', 'center');
+            $('#nodes-table').attr('style', 'width:800px;');
+
+        }
+        else $('#nodes-table').attr('style', '');
         $.each(nodes, function (i, item) {
+            // compareGraphPage.cyGraph.filter("node[label='" + item[0]['label'] + "']").style({'background-color':'#e34657'});
+
             if (item.length){
                 trHTML += '<tr><td><b class="compare-table-td" >Name : </b>' + item[0]['name']
                 + '<br> <b class="compare-table-td"> Label : </b>' + item[0]['label']
@@ -576,16 +768,22 @@ var compareGraphPage = {
             }
             else{
                 trHTML += '<tr><td><b class="compare-table-td" >Name : </b>' + item['name']
-                + '<br> <b class="compare-table-td"> Label : </b>' + item['label']
-                + '</td><td> <b class="compare-table-td">Name : </b>' + '---'
-                + '<br> <b class="compare-table-td"> Label : </b>' + '---' + '</td></tr>';
+                + '<br> <b class="compare-table-td"> Label : </b>' + item['label'];
             }
+
         });
         $('#nodes-comparison-table').append(trHTML);
     },
     populateEdgeData: function (edges) {
         var trHTML = '';
+        $('#edges-table').DataTable().clear().destroy();
         $('#edges-comparison-table').find("tr:gt(0)").remove();
+        if(!edges[0].length){
+            $('#edges-table > thead').find("th:gt(0)").remove();
+            $('#edges-table').parent().attr('align', 'center');
+            $('#edges-table').attr('style', 'width:800px;');
+        }
+        else $('#edges-table').attr('style', '');
         $.each(edges, function (i, item) {
 
             if (item.length){
@@ -597,23 +795,20 @@ var compareGraphPage = {
             else{
                 trHTML += '<tr><td><b class="compare-table-td" >Name : </b>' + item['name']
                 + '<br> <b class="compare-table-td"> Head Node : </b>' + item['head_node']['name']
-                + '<br> <b class="compare-table-td"> Tail Node : </b>' + item['tail_node']['name']
-                + '</td><td> <b class="compare-table-td">Name : </b>' + '---'
-                + '<br> <b class="compare-table-td"> Head Node : </b>' + '---'
-                + '<br> <b class="compare-table-td"> Tail Node : </b>' + '---' + '</td></tr>';
+                + '<br> <b class="compare-table-td"> Tail Node : </b>' + item['tail_node']['name'];
             }
         });
         $('#edges-comparison-table').append(trHTML);
     },
-    contructCytoscapeGraph: function (layout) {
-        if (!layout) {
-            layout = {
-                name: 'random',
-                padding: 10,
-                fit: true,
-                animate: false
-            };
-        }
+    contructCytoscapeGraph: function (graph_json, style_json) {
+        // if (!layout) {
+        //     layout = {
+        //         name: 'random',
+        //         padding: 10,
+        //         fit: true,
+        //         animate: false
+        //     };
+        // }
 
         graph_json['elements']['nodes'] = _.map(graph_json['elements']['nodes'], function (node) {
             var newNode = {
@@ -738,7 +933,6 @@ var graphPage = {
             window.setTimeout(function () {
                 $('#cyGraphContainer').css('height', '99%');
             }, 100);
-
         });
 
         if (utils.getURLParameter('query')) {

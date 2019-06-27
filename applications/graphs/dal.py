@@ -494,8 +494,9 @@ def edges_intersection(db_session, graph_1_id=None, graph_2_id=None):
 
 	if graph_1_id is not None and graph_2_id is not None:
 		query = query.filter(Edge.graph_id == graph_1_id).\
-				join(alias_edge, Edge.name == alias_edge.name).\
-				filter(alias_edge.graph_id == graph_2_id)
+				join(alias_edge, Edge.head_node_name == alias_edge.head_node_name).\
+				filter(alias_edge.graph_id == graph_2_id).\
+				filter( Edge.tail_node_name == alias_edge.tail_node_name)
 	total = query.count()
 	return total, query.all()
 
